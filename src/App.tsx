@@ -16,7 +16,7 @@ import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'landing' | 'dashboard' | 'workspace' | 'services'>('landing');
+  const [currentView, setCurrentView] = useState<'landing' | 'dashboard' | 'workspace'>('landing');
   const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTab>('overview');
   const [selectedIncidentId, setSelectedIncidentId] = useState<string>('inc-304');
 
@@ -39,10 +39,15 @@ export default function App() {
 
   const handleSidebarTabSelect = (tab: DashboardTab) => {
     setActiveDashboardTab(tab);
-    if (tab === 'services') {
-      setCurrentView('services');
-    } else if (tab === 'overview' || tab === 'incidents') {
+    setCurrentView('dashboard');
+  };
+
+  const handleNavigate = (view: 'landing' | 'dashboard' | 'workspace' | 'services') => {
+    if (view === 'services') {
       setCurrentView('dashboard');
+      setActiveDashboardTab('services');
+    } else {
+      setCurrentView(view as 'landing' | 'dashboard' | 'workspace');
     }
   };
 
@@ -55,7 +60,7 @@ export default function App() {
             <div className="flex-1 flex flex-col">
               <Navbar 
                 currentView="landing" 
-                onNavigate={(view) => setCurrentView(view)} 
+                onNavigate={handleNavigate} 
                 onScrollToSection={scrollToSection} 
               />
 
@@ -88,7 +93,7 @@ export default function App() {
               </main>
 
               <Footer 
-                onNavigate={(view) => setCurrentView(view)} 
+                onNavigate={handleNavigate} 
                 onScrollToSection={scrollToSection} 
               />
             </div>
@@ -107,26 +112,39 @@ export default function App() {
                 onBackToLanding={() => setCurrentView('landing')}
               />
 
-              {currentView === 'services' || activeDashboardTab === 'services' ? (
+              {activeDashboardTab === 'overview' ? (
+                <ProductDashboard
+                  currentTab="overview"
+                  onSelectIncident={handleSelectIncident}
+                  onNavigateTab={(tab) => handleSidebarTabSelect(tab as DashboardTab)}
+                />
+              ) : activeDashboardTab === 'incidents' ? (
+                <ProductDashboard
+                  currentTab="incidents"
+                  onSelectIncident={handleSelectIncident}
+                  onNavigateTab={(tab) => handleSidebarTabSelect(tab as DashboardTab)}
+                />
+              ) : activeDashboardTab === 'services' ? (
                 <ServiceView onSelectIncident={handleSelectIncident} />
+              ) : activeDashboardTab === 'investigator' ? (
+                <div className="flex-1 overflow-y-auto bg-[var(--bg-app)]">
+                  <AIInvestigatorSection onOpenWorkspace={() => handleSelectIncident('inc-304')} />
+                </div>
               ) : activeDashboardTab === 'memory' ? (
-                <div className="flex-1 overflow-y-auto p-6 lg:p-8">
+                <div className="flex-1 overflow-y-auto bg-[var(--bg-app)]">
                   <HindsightMemorySection />
                 </div>
               ) : activeDashboardTab === 'runbooks' ? (
-                <div className="flex-1 overflow-y-auto p-6 lg:p-8">
+                <div className="flex-1 overflow-y-auto bg-[var(--bg-app)]">
                   <RunbooksSection />
                 </div>
               ) : activeDashboardTab === 'postmortems' ? (
-                <div className="flex-1 overflow-y-auto p-6 lg:p-8">
+                <div className="flex-1 overflow-y-auto bg-[var(--bg-app)]">
                   <PostmortemSection />
-                </div>
-              ) : activeDashboardTab === 'investigator' ? (
-                <div className="flex-1 overflow-y-auto p-6 lg:p-8">
-                  <AIInvestigatorSection onOpenWorkspace={() => handleSelectIncident('inc-304')} />
                 </div>
               ) : (
                 <ProductDashboard
+                  currentTab="overview"
                   onSelectIncident={handleSelectIncident}
                   onNavigateTab={(tab) => handleSidebarTabSelect(tab as DashboardTab)}
                 />

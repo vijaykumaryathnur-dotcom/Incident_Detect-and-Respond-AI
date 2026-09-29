@@ -326,7 +326,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Server] Incident Response platform listening on port ${PORT}`);
+    console.log(`[Server] DRSTI platform listening on port ${PORT}`);
   });
 }
 

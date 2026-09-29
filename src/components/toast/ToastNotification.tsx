@@ -29,7 +29,15 @@ export const ToastNotification: React.FC<ToastNotificationProps> = ({
   const duration = toast.durationMs || 9000;
   const [isPaused, setIsPaused] = useState(false);
   const [remainingTime, setRemainingTime] = useState(duration);
-  const { soundEnabled, toggleSound, playAudioCue } = useToast();
+  const { soundEnabled, playAudioCue } = useToast();
+  const dismissedRef = React.useRef(false);
+
+  const handleDismiss = React.useCallback(() => {
+    if (!dismissedRef.current) {
+      dismissedRef.current = true;
+      onDismiss(toast.id);
+    }
+  }, [onDismiss, toast.id]);
 
   useEffect(() => {
     if (isPaused) return;
@@ -37,17 +45,19 @@ export const ToastNotification: React.FC<ToastNotificationProps> = ({
     const intervalMs = 100;
     const timer = setInterval(() => {
       setRemainingTime((prev) => {
-        if (prev <= intervalMs) {
-          clearInterval(timer);
-          onDismiss(toast.id);
-          return 0;
-        }
-        return prev - intervalMs;
+        const next = prev - intervalMs;
+        return next > 0 ? next : 0;
       });
     }, intervalMs);
 
     return () => clearInterval(timer);
-  }, [isPaused, toast.id, onDismiss]);
+  }, [isPaused]);
+
+  useEffect(() => {
+    if (remainingTime <= 0) {
+      handleDismiss();
+    }
+  }, [remainingTime, handleDismiss]);
 
   const progressPercentage = Math.max(0, (remainingTime / duration) * 100);
 
@@ -118,7 +128,7 @@ export const ToastNotification: React.FC<ToastNotificationProps> = ({
             </span>
 
             <button
-              onClick={() => onDismiss(toast.id)}
+              onClick={() => handleDismiss()}
               className="p-1 rounded-md text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.08] transition-colors cursor-pointer"
               title="Dismiss notification"
             >
@@ -166,7 +176,7 @@ export const ToastNotification: React.FC<ToastNotificationProps> = ({
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => onDismiss(toast.id)}
+              onClick={() => handleDismiss()}
               className="px-2.5 py-1 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.05] rounded-md transition-colors cursor-pointer"
             >
               Acknowledge
@@ -174,7 +184,7 @@ export const ToastNotification: React.FC<ToastNotificationProps> = ({
             <button
               onClick={() => {
                 onInspect(toast.incidentId);
-                onDismiss(toast.id);
+                handleDismiss();
               }}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 rounded-lg shadow-md shadow-rose-900/30 ring-1 ring-white/10 transition-all cursor-pointer active:scale-95"
             >

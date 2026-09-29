@@ -1,5 +1,5 @@
 {
-  "name": "AI Incident Response",
+  "name": "DRSTI",
   "description": "Autonomous SRE and incident response platform powered by Hindsight persistent memory.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

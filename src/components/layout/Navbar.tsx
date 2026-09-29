@@ -56,7 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onScrol
                 <Cpu className="w-4 h-4 text-white" />
               </div>
               <span className="text-sm font-semibold tracking-wider text-slate-900 dark:text-slate-100 uppercase">
-                AI INCIDENT RESPONSE
+                DRSTI
               </span>
             </button>
           </div>

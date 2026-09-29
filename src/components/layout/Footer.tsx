@@ -26,7 +26,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onScrollToSection })
                 <Cpu className="w-3.5 h-3.5 text-white" />
               </div>
               <span className="text-sm font-semibold tracking-wider text-slate-900 dark:text-slate-200 uppercase">
-                AI INCIDENT RESPONSE
+                DRSTI
               </span>
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-400 max-w-sm leading-relaxed">
@@ -130,7 +130,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onScrollToSection })
         {/* Bottom bar */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-500">
           <div>
-            © {new Date().getFullYear()} AI Incident Response Platform. All rights reserved.
+            © {new Date().getFullYear()} DRSTI. All rights reserved.
           </div>
           <div className="flex items-center gap-6 font-mono text-[11px]">
             <span>Latency: 12ms</span>

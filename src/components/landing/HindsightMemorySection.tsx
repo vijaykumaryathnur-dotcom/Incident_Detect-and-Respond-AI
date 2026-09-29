@@ -112,13 +112,11 @@ export const HindsightMemorySection: React.FC = () => {
         loaded: DEMO_INCIDENTS.length,
         failed: 0,
         total: DEMO_INCIDENTS.length,
-        statusText: `All ${DEMO_INCIDENTS.length} demo incidents are already retained in Hindsight bank "${stats.bankId || 'Incident'}". Loaded ${DEMO_INCIDENTS.length} of ${DEMO_INCIDENTS.length}, failed 0.`,
+        statusText: `Loaded ${DEMO_INCIDENTS.length} of ${DEMO_INCIDENTS.length}, failed 0`,
         isComplete: true,
         allAlreadyLoaded: true,
+        errors: [],
       });
-      setTimeout(() => {
-        setDemoProgress(null);
-      }, 5000);
       return;
     }
 
@@ -128,23 +126,36 @@ export const HindsightMemorySection: React.FC = () => {
       loaded: initialLoadedCount,
       failed: 0,
       total: DEMO_INCIDENTS.length,
-      statusText: `Loaded ${initialLoadedCount} of ${DEMO_INCIDENTS.length}. Processing next incidents with 1s spacing...`,
+      statusText: `Loaded ${initialLoadedCount} of ${DEMO_INCIDENTS.length}, failed 0. Retaining remaining demo incidents one at a time with 1s delay...`,
+      errors: [],
     });
 
     try {
       const result = await hindsightService.loadDemoIncidents({
-        onProgress: (loaded, total, currentInc, errorMsg) => {
+        onProgress: (loaded, total, currentInc, errorMsg, inProgress) => {
           setDemoProgress(prev => {
             const currentFailed = errorMsg ? (prev?.failed || 0) + 1 : (prev?.failed || 0);
+            const currentErrors = errorMsg 
+              ? [...(prev?.errors || []), { incidentNumber: currentInc.incidentNumber, service: currentInc.service, error: errorMsg }]
+              : (prev?.errors || []);
+
+            let statusText = '';
+            if (inProgress) {
+              statusText = `Retaining Incident #${currentInc.incidentNumber} [${currentInc.service}]... (Loaded ${loaded} of ${total})`;
+            } else if (errorMsg) {
+              statusText = `Incident #${currentInc.incidentNumber} [${currentInc.service}] failed: ${errorMsg}. Continuing with remaining incidents...`;
+            } else {
+              statusText = `Loaded ${loaded} of ${total}: Incident #${currentInc.incidentNumber} [${currentInc.service}] retained!`;
+            }
+
             return {
               loaded,
               failed: currentFailed,
               total,
               currentIncident: currentInc,
-              statusText: errorMsg
-                ? `Incident #${currentInc.incidentNumber} [${currentInc.service}] failed: ${errorMsg}. Continuing with remaining incidents...`
-                : `Loaded ${loaded} of ${total}: Incident #${currentInc.incidentNumber} [${currentInc.service}] retained!`,
+              statusText,
               errorMessage: errorMsg || prev?.errorMessage,
+              errors: currentErrors,
             };
           });
         },
@@ -167,20 +178,20 @@ export const HindsightMemorySection: React.FC = () => {
         isComplete: true,
         errors: result.errors,
       });
-
-      setTimeout(() => {
-        setDemoProgress(null);
-      }, 10000);
     } catch (err: any) {
       console.error('Demo load error:', err);
-      setDemoProgress(prev => ({
-        loaded: prev?.loaded || 0,
-        failed: (prev?.failed || 0) + 1,
-        total: DEMO_INCIDENTS.length,
-        statusText: `Loaded ${prev?.loaded || 0} of ${DEMO_INCIDENTS.length}, failed ${(prev?.failed || 0) + 1}: ${err?.message || 'Error communicating with Hindsight'}`,
-        errorMessage: err?.message,
-        isComplete: true,
-      }));
+      setDemoProgress(prev => {
+        const finalFailed = (prev?.failed || 0) + 1;
+        return {
+          loaded: prev?.loaded || 0,
+          failed: finalFailed,
+          total: DEMO_INCIDENTS.length,
+          statusText: `Loaded ${prev?.loaded || 0} of ${DEMO_INCIDENTS.length}, failed ${finalFailed}: ${err?.message || 'Error communicating with Hindsight'}`,
+          errorMessage: err?.message,
+          isComplete: true,
+          errors: prev?.errors || [],
+        };
+      });
     } finally {
       setIsDemoLoading(false);
     }
@@ -362,20 +373,30 @@ export const HindsightMemorySection: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Visual Progress Bar */}
-                <div className="w-full sm:w-56 shrink-0 space-y-1">
-                  <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400">
-                    <span>Progress</span>
-                    <span>{Math.round((demoProgress.loaded / demoProgress.total) * 100)}%</span>
+                {/* Visual Progress Bar & Dismiss Button */}
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="w-full sm:w-56 space-y-1">
+                    <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                      <span>Progress</span>
+                      <span>{Math.round((demoProgress.loaded / demoProgress.total) * 100)}%</span>
+                    </div>
+                    <div className="h-2 w-full bg-slate-200 dark:bg-white/10 rounded-full overflow-hidden">
+                      <motion.div
+                        className={`h-full rounded-full ${demoProgress.failed > 0 ? 'bg-amber-500' : 'bg-purple-600 dark:bg-purple-500'}`}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(demoProgress.loaded / demoProgress.total) * 100}%` }}
+                        transition={{ ease: 'easeOut', duration: 0.3 }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-2 w-full bg-slate-200 dark:bg-white/10 rounded-full overflow-hidden">
-                    <motion.div
-                      className={`h-full rounded-full ${demoProgress.failed > 0 ? 'bg-amber-500' : 'bg-purple-600 dark:bg-purple-500'}`}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${(demoProgress.loaded / demoProgress.total) * 100}%` }}
-                      transition={{ ease: 'easeOut', duration: 0.3 }}
-                    />
-                  </div>
+
+                  <button
+                    onClick={() => setDemoProgress(null)}
+                    title="Dismiss"
+                    className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
 

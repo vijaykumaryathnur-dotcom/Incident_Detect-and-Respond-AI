@@ -54,7 +54,7 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({
   onInspectIncident,
 }) => {
   const [toasts, setToasts] = useState<P1ToastData[]>([]);
-  const [scenarioIndex, setScenarioIndex] = useState(0);
+  const scenarioIndexRef = React.useRef(0);
   const [soundEnabled, setSoundEnabledState] = useState<boolean>(() => audioCueService.isEnabled());
 
   const toggleSound = useCallback(() => {
@@ -75,8 +75,8 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({
   }, []);
 
   const triggerP1Alert = useCallback((customData?: Partial<P1ToastData>) => {
-    const scenario = SAMPLE_P1_SCENARIOS[scenarioIndex % SAMPLE_P1_SCENARIOS.length];
-    setScenarioIndex((idx) => idx + 1);
+    const scenario = SAMPLE_P1_SCENARIOS[scenarioIndexRef.current % SAMPLE_P1_SCENARIOS.length];
+    scenarioIndexRef.current += 1;
 
     const newToast: P1ToastData = {
       ...scenario,
@@ -95,7 +95,7 @@ export const ToastProvider: React.FC<ToastProviderProps> = ({
       const filtered = prev.filter((t) => t.incidentId !== newToast.incidentId);
       return [newToast, ...filtered].slice(0, 3);
     });
-  }, [scenarioIndex]);
+  }, []);
 
   return (
     <ToastContext.Provider value={{ 

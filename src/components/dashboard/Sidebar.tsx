@@ -55,7 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Cpu className="w-4 h-4 text-white" />
             </div>
             <span className="text-xs font-bold tracking-wider text-slate-900 dark:text-slate-100 uppercase font-mono">
-              AI RESPONSE
+              DRSTI
             </span>
           </div>
 

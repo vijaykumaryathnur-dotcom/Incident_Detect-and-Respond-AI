@@ -38,9 +38,14 @@ import { useToast } from '../../context/ToastContext';
 interface ProductDashboardProps {
   onSelectIncident: (incidentId: string) => void;
   onNavigateTab?: (tab: string) => void;
+  currentTab?: 'overview' | 'incidents';
 }
 
-export const ProductDashboard: React.FC<ProductDashboardProps> = ({ onSelectIncident }) => {
+export const ProductDashboard: React.FC<ProductDashboardProps> = ({ 
+  onSelectIncident,
+  onNavigateTab,
+  currentTab = 'overview'
+}) => {
   const [incidents, setIncidents] = useState<Incident[]>(INITIAL_INCIDENTS);
   const [stats, setStats] = useState<SystemIntelligenceStats>(hindsightService.getStats());
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(true);
@@ -316,10 +321,16 @@ export const ProductDashboard: React.FC<ProductDashboardProps> = ({ onSelectInci
         <div>
           <div className="text-xs font-mono text-slate-500 dark:text-slate-400 mb-1 flex items-center gap-2">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Cluster: us-east-prod / SRE Operations</span>
+            <span>
+              {currentTab === 'incidents'
+                ? 'Cluster: us-east-prod / Active Incidents & Queue'
+                : 'Cluster: us-east-prod / SRE Operations & System Health'}
+            </span>
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Incident Command Overview
+            {currentTab === 'incidents'
+              ? 'Active Incidents & Triage Queue'
+              : 'Incident Command Overview'}
           </h1>
         </div>
 
@@ -388,6 +399,66 @@ export const ProductDashboard: React.FC<ProductDashboardProps> = ({ onSelectInci
           </div>
         </div>
       </div>
+
+      {/* Executive Summary Metrics (Overview tab) */}
+      {currentTab === 'overview' && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="p-4 rounded-xl bg-white dark:bg-[#0A0D15] border border-slate-200/80 dark:border-white/[0.07] shadow-sm">
+            <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
+              <span>ACTIVE INCIDENTS</span>
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+            </div>
+            <div className="text-2xl font-bold text-slate-900 dark:text-white font-mono mt-2">
+              {incidents.filter(i => i.status !== 'Resolved').length}
+            </div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-2">
+              <span className="text-rose-600 dark:text-rose-400 font-semibold">{severityCounts['P1']} Critical P1</span>
+              <span>·</span>
+              <span className="text-amber-600 dark:text-amber-400">{severityCounts['P2']} P2</span>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-white dark:bg-[#0A0D15] border border-slate-200/80 dark:border-white/[0.07] shadow-sm">
+            <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
+              <span>AVG MTTR (HINDSIGHT)</span>
+              <Clock className="w-3.5 h-3.5 text-indigo-500" />
+            </div>
+            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-2">
+              {stats.avgMttrMinutes}m
+            </div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              Down from 48m baseline (-85%)
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-white dark:bg-[#0A0D15] border border-slate-200/80 dark:border-white/[0.07] shadow-sm">
+            <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
+              <span>HINDSIGHT MEMORY</span>
+              <Database className="w-3.5 h-3.5 text-purple-500" />
+            </div>
+            <div className="text-2xl font-bold text-slate-900 dark:text-white font-mono mt-2">
+              {stats.totalMemories.toLocaleString()}
+            </div>
+            <div className="text-[11px] text-purple-600 dark:text-purple-400 mt-1 font-mono">
+              {stats.learnedPatterns} active learned patterns
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-white dark:bg-[#0A0D15] border border-slate-200/80 dark:border-white/[0.07] shadow-sm">
+            <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
+              <span>SERVICE HEALTH</span>
+              <Activity className="w-3.5 h-3.5 text-emerald-500" />
+            </div>
+            <div className="text-2xl font-bold text-slate-900 dark:text-white font-mono mt-2">
+              99.98%
+            </div>
+            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span>Core microservices nominal</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FILTERING AND SORTING TOOLBAR */}
       <div className="bg-white dark:bg-[#0A0D15] rounded-xl border border-slate-200 dark:border-white/10 p-4 shadow-sm dark:shadow-xl space-y-4">
