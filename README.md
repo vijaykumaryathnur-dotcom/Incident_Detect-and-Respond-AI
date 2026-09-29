@@ -1,4 +1,4 @@
-# AI Incident Response: an on-call agent that remembers
+# DRSTI: an on-call agent that remembers
 
 > Incidents happen. Your AI remembers.
 
@@ -33,7 +33,7 @@ All memory lives in one Hindsight memory bank called **`Incident`**.
 | Hindsight operation | Where it is used in the app |
 |---|---|
 | **Retain** | Each resolved incident is stored as its own document with a unique `document_id` (for example `doc-demo-inc-101`), plus tags (service, root cause, `resolved`) and metadata (`date`, `service`, `incidentNumber`). The "Retain to Hindsight" drawer and the "Save to Hindsight" button on the Postmortems page write new memories. |
-| **Recall** | The Memory page and the AI Investigator search the bank for incidents similar to the current one (symptoms, service, error text). Results show the recalled incident, its root cause, the fix that worked and the extracted entities. |
+| **Recall** | The Memory page, the AI Investigator, and the **DRSTI Assistant** search the bank for incidents similar to the current one (symptoms, service, error text). Results show the recalled incident, its root cause, the fix that worked and the extracted entities. |
 | **Automatic extraction** | Hindsight extracts entities (services, components, incident IDs) and links memories together. Related incidents connect through shared entities such as *Payments API* and *PgBouncer*. |
 | **Observations** | Hindsight consolidates repeated facts into learned patterns, which are shown as "Learned pattern" on recall results. |
 

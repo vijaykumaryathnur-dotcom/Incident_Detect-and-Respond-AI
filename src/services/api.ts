@@ -279,6 +279,31 @@ class ApiService {
       return [];
     }
   }
+
+  // 8. DRSTI Assistant (Dedicated Incident Response Clarification Chatbot)
+  public async askAssistant(params: {
+    message: string;
+    history?: Array<{ role: 'user' | 'assistant'; text: string }>;
+    incidentContext?: Partial<Incident> & {
+      recommendedRunbook?: string;
+      errorMessages?: string[];
+    };
+  }): Promise<{
+    reply: string;
+    sources?: Array<{ type: string; detail: string }>;
+    hindsightMatches?: number;
+    modelUsed?: string;
+  }> {
+    return await this.request<{
+      reply: string;
+      sources?: Array<{ type: string; detail: string }>;
+      hindsightMatches?: number;
+      modelUsed?: string;
+    }>('/api/chat/assistant', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  }
 }
 
 export const apiService = new ApiService();

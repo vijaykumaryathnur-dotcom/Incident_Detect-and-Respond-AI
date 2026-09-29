@@ -14,6 +14,7 @@ import { IncidentWorkspace } from './components/dashboard/IncidentWorkspace';
 import { ServiceView } from './components/dashboard/ServiceView';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { IncidentAssistantChat } from './components/chat/IncidentAssistantChat';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<'landing' | 'dashboard' | 'workspace'>('landing');
@@ -151,6 +152,12 @@ export default function App() {
               )}
             </div>
           )}
+
+          {/* DRSTI Assistant - Floating Incident Response Clarification Chatbot */}
+          <IncidentAssistantChat 
+            currentIncidentId={selectedIncidentId}
+            onNavigateToIncident={handleSelectIncident}
+          />
         </div>
       </ToastProvider>
     </ThemeProvider>
