@@ -5,83 +5,533 @@ import {
   Sparkles, 
   Clock, 
   CheckCircle2, 
-  ArrowDown, 
   ArrowRight, 
   Search, 
   BrainCircuit, 
   Sliders, 
   FileText,
   RotateCcw,
-  ShieldCheck
+  ShieldCheck,
+  Plus,
+  Send,
+  Check,
+  Tag,
+  Layers,
+  Activity,
+  Server,
+  Download,
+  Loader2,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { hindsightService } from '../../services/hindsight';
-import { HindsightMemory } from '../../types';
+import { HindsightMemory, SystemIntelligenceStats } from '../../types';
+import { DEMO_INCIDENTS, DemoIncidentItem } from '../../data/demoIncidents';
 
 export const HindsightMemorySection: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [memories, setMemories] = useState<HindsightMemory[]>([]);
   const [selectedMemory, setSelectedMemory] = useState<HindsightMemory | null>(null);
+  const [stats, setStats] = useState<SystemIntelligenceStats>(hindsightService.getStats());
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  
+  // Retain Form state
+  const [isRetainFormOpen, setIsRetainFormOpen] = useState<boolean>(false);
+  const [retainTitle, setRetainTitle] = useState<string>('');
+  const [retainService, setRetainService] = useState<string>('Payments API');
+  const [retainResolution, setRetainResolution] = useState<string>('');
+  const [retainLesson, setRetainLesson] = useState<string>('');
+  const [retainStatus, setRetainStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [retainMessage, setRetainMessage] = useState<string>('');
 
-  useEffect(() => {
-    const fetchMemories = async () => {
+  // Demo Data Loader state
+  const [isDemoLoading, setIsDemoLoading] = useState<boolean>(false);
+  const [demoProgress, setDemoProgress] = useState<{
+    loaded: number;
+    failed: number;
+    total: number;
+    currentIncident?: DemoIncidentItem;
+    statusText: string;
+    isComplete?: boolean;
+    allAlreadyLoaded?: boolean;
+    errorMessage?: string;
+    errors?: Array<{ incidentNumber: number; service: string; error: string }>;
+  } | null>(null);
+  const [loadedDemoIncidents, setLoadedDemoIncidents] = useState<Set<number>>(new Set());
+
+  const fetchMemories = async (query = searchQuery) => {
+    setIsLoading(true);
+    try {
       const results = await hindsightService.searchMemories({
-        query: searchQuery,
-        limit: 4
+        query,
+        limit: 8
       });
       setMemories(results);
-      if (results.length > 0 && !selectedMemory) {
+      if (results.length > 0) {
         setSelectedMemory(results[0]);
       }
-    };
+      setStats(hindsightService.getStats());
+    } catch (err) {
+      console.warn('Memory search error:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchMemories();
 
+    hindsightService.getLoadedDemoIncidentNumbers().then((nums) => {
+      setLoadedDemoIncidents(nums);
+    });
+
     const unsubscribe = hindsightService.subscribe(() => {
-      fetchMemories();
+      setStats(hindsightService.getStats());
+      const current = hindsightService.getAllMemories();
+      if (current.length > 0) {
+        setMemories(current);
+        if (!selectedMemory) {
+          setSelectedMemory(current[0]);
+        }
+      }
+      hindsightService.getLoadedDemoIncidentNumbers().then(setLoadedDemoIncidents);
     });
     return () => unsubscribe();
-  }, [searchQuery]);
+  }, []);
+
+  const handleLoadDemoData = async () => {
+    if (isDemoLoading) return;
+
+    // Check existing loaded
+    const existing = await hindsightService.getLoadedDemoIncidentNumbers();
+    setLoadedDemoIncidents(existing);
+
+    const unloadded = DEMO_INCIDENTS.filter(item => !existing.has(item.incidentNumber));
+    if (unloadded.length === 0) {
+      setDemoProgress({
+        loaded: DEMO_INCIDENTS.length,
+        failed: 0,
+        total: DEMO_INCIDENTS.length,
+        statusText: `All ${DEMO_INCIDENTS.length} demo incidents are already retained in Hindsight bank "${stats.bankId || 'Incident'}". Loaded ${DEMO_INCIDENTS.length} of ${DEMO_INCIDENTS.length}, failed 0.`,
+        isComplete: true,
+        allAlreadyLoaded: true,
+      });
+      setTimeout(() => {
+        setDemoProgress(null);
+      }, 5000);
+      return;
+    }
+
+    setIsDemoLoading(true);
+    const initialLoadedCount = DEMO_INCIDENTS.length - unloadded.length;
+    setDemoProgress({
+      loaded: initialLoadedCount,
+      failed: 0,
+      total: DEMO_INCIDENTS.length,
+      statusText: `Loaded ${initialLoadedCount} of ${DEMO_INCIDENTS.length}. Processing next incidents with 1s spacing...`,
+    });
+
+    try {
+      const result = await hindsightService.loadDemoIncidents({
+        onProgress: (loaded, total, currentInc, errorMsg) => {
+          setDemoProgress(prev => {
+            const currentFailed = errorMsg ? (prev?.failed || 0) + 1 : (prev?.failed || 0);
+            return {
+              loaded,
+              failed: currentFailed,
+              total,
+              currentIncident: currentInc,
+              statusText: errorMsg
+                ? `Incident #${currentInc.incidentNumber} [${currentInc.service}] failed: ${errorMsg}. Continuing with remaining incidents...`
+                : `Loaded ${loaded} of ${total}: Incident #${currentInc.incidentNumber} [${currentInc.service}] retained!`,
+              errorMessage: errorMsg || prev?.errorMessage,
+            };
+          });
+        },
+        onError: (incident, errorMsg) => {
+          console.warn(`[DemoLoader] Incident #${incident.incidentNumber} error:`, errorMsg);
+        }
+      });
+
+      // Update state and refresh
+      const updatedExisting = await hindsightService.getLoadedDemoIncidentNumbers();
+      setLoadedDemoIncidents(updatedExisting);
+      await fetchMemories();
+
+      const finalStatus = `Loaded ${result.loadedCount} of ${result.total}, failed ${result.failedCount}`;
+      setDemoProgress({
+        loaded: result.loadedCount,
+        failed: result.failedCount,
+        total: result.total,
+        statusText: finalStatus,
+        isComplete: true,
+        errors: result.errors,
+      });
+
+      setTimeout(() => {
+        setDemoProgress(null);
+      }, 10000);
+    } catch (err: any) {
+      console.error('Demo load error:', err);
+      setDemoProgress(prev => ({
+        loaded: prev?.loaded || 0,
+        failed: (prev?.failed || 0) + 1,
+        total: DEMO_INCIDENTS.length,
+        statusText: `Loaded ${prev?.loaded || 0} of ${DEMO_INCIDENTS.length}, failed ${(prev?.failed || 0) + 1}: ${err?.message || 'Error communicating with Hindsight'}`,
+        errorMessage: err?.message,
+        isComplete: true,
+      }));
+    } finally {
+      setIsDemoLoading(false);
+    }
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    fetchMemories(searchQuery);
+  };
+
+  const handleRetainSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!retainTitle.trim() || !retainResolution.trim()) return;
+
+    setRetainStatus('saving');
+    try {
+      const incNum = 310 + Math.floor(Math.random() * 50);
+      await hindsightService.retainIncident({
+        id: `inc-${incNum}`,
+        incidentNumber: incNum,
+        title: retainTitle,
+        severity: 'P1',
+        status: 'Resolved',
+        service: retainService,
+        assignee: 'SRE Responder',
+        createdAt: 'Just now',
+        summary: retainResolution,
+        signals: []
+      }, {
+        resolution: retainResolution,
+        lessonsLearned: retainLesson || 'Always tune limits before performing restarts.'
+      });
+
+      setRetainStatus('saved');
+      setRetainMessage(`Retained to Hindsight bank "${stats.bankId || 'Incident'}"!`);
+      setRetainTitle('');
+      setRetainResolution('');
+      setRetainLesson('');
+
+      setTimeout(() => {
+        setRetainStatus('idle');
+        setIsRetainFormOpen(false);
+      }, 2500);
+
+      // Refresh memories
+      fetchMemories();
+    } catch (err: any) {
+      setRetainStatus('error');
+      setRetainMessage(err?.message || 'Failed to retain memory');
+      setTimeout(() => setRetainStatus('idle'), 4000);
+    }
+  };
 
   const flowNodes = [
-    { label: 'Current Incident #304', sub: 'P1 Database Latency Spike', type: 'incident' },
-    { label: 'Hindsight Memory Layer', sub: 'Vector Similarity Recall (94%)', type: 'hindsight' },
-    { label: 'Related Incidents', sub: '#184, #231, #267 Found', type: 'related' },
-    { label: 'Recalled Root Causes', sub: 'PgBouncer Pool Exhaustion', type: 'cause' },
-    { label: 'Successful Resolutions', sub: 'Dynamic Pool Scaling (No Restart)', type: 'resolution' },
-    { label: 'New Recommendation', sub: 'DB-CONNECTION-POOL-RECOVERY', type: 'output' },
+    { label: 'Incoming Incident', sub: 'P1 Database Latency Surge', type: 'incident' },
+    { label: 'Hindsight Memory Bank', sub: 'Semantic Recall (Bank: Incident)', type: 'hindsight' },
+    { label: 'Correlated Precedents', sub: 'Targeted Outage Embeddings', type: 'related' },
+    { label: 'Extracted Facts', sub: 'PgBouncer Pool Exhaustion', type: 'cause' },
+    { label: 'Verified Resolution', sub: 'Dynamic Pool Scaling', type: 'resolution' },
+    { label: 'Active Playbook', sub: 'DB-CONNECTION-POOL-RECOVERY', type: 'output' },
+  ];
+
+  const quickPills = [
+    'checkout-api Redis cache',
+    'payments-api PgBouncer pool',
+    'auth-service JWT signing key',
+    'search-api memory leak LRU',
+    'notification-service Kafka consumer lag',
+    'orders-db PostgreSQL missing index',
+    'api-gateway rate limit config',
+    'inventory-service row-level locking'
   ];
 
   return (
-    <section id="hindsight-memory" className="py-24 border-t border-slate-200 dark:border-white/[0.06] relative">
+    <section id="hindsight-memory" className="py-12 lg:py-16 border-t border-slate-200 dark:border-white/[0.06] relative">
       {/* Background radial atmosphere */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[500px] bg-purple-500/5 dark:bg-purple-900/10 blur-[140px] pointer-events-none -z-10 rounded-full" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto">
-          <div className="inline-flex items-center gap-2 text-xs font-mono font-semibold uppercase tracking-wider text-purple-600 dark:text-purple-400 mb-3">
-            <Database className="w-3.5 h-3.5" />
-            <span>The Intelligence Layer</span>
+        {/* Section Header & Real Connection Status Badge */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-slate-200 dark:border-white/[0.08]">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 text-xs font-mono font-semibold uppercase tracking-wider text-purple-600 dark:text-purple-400 mb-3">
+              <Database className="w-3.5 h-3.5" />
+              <span>Real Hindsight Memory Engine</span>
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900 dark:text-white text-balance">
+              Persistent Institutional Memory
+            </h2>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 leading-relaxed text-balance">
+              Connected directly to Hindsight memory bank <strong className="text-purple-700 dark:text-purple-300 font-mono">"{stats.bankId || 'Incident'}"</strong>.
+              Every resolved incident is retained with vector & temporal embeddings, and recalled automatically during live triage.
+            </p>
           </div>
-          <h2 className="text-3xl sm:text-5xl font-bold tracking-tight text-slate-900 dark:text-white text-balance">
-            Every incident makes the next one easier.
-          </h2>
-          <p className="mt-4 text-base sm:text-lg text-slate-600 dark:text-slate-400 leading-relaxed text-balance">
-            Your AI remembers what happened, what worked, and what didn't.
-            Unlike generic LLMs that restart with a blank context every session, Hindsight creates permanent institutional memory.
-          </p>
+
+          {/* Real Status Indicator & Retain Action */}
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-500/30 text-xs font-mono shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-slate-800 dark:text-slate-200 font-semibold">
+                Bank: {stats.bankId || 'Incident'}
+              </span>
+              <span className="text-slate-400 dark:text-slate-500">·</span>
+              <span className="text-purple-700 dark:text-purple-300 font-bold">
+                {stats.totalMemories} {stats.totalMemories === 1 ? 'memory' : 'memories'}
+              </span>
+            </div>
+
+            {/* Load Demo Data Button */}
+            <button
+              onClick={handleLoadDemoData}
+              disabled={isDemoLoading}
+              title={loadedDemoIncidents.size >= DEMO_INCIDENTS.length ? 'All 12 demo incidents already loaded into Hindsight' : 'Load 12 canonical SRE incidents into Hindsight'}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-purple-700 dark:text-purple-200 bg-purple-100 hover:bg-purple-200 dark:bg-purple-900/40 dark:hover:bg-purple-900/60 border border-purple-300 dark:border-purple-500/40 shadow-sm transition-all cursor-pointer disabled:opacity-60"
+            >
+              {isDemoLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600 dark:text-purple-300" />
+              ) : (
+                <Download className="w-3.5 h-3.5 text-purple-600 dark:text-purple-300" />
+              )}
+              <span>
+                {isDemoLoading
+                  ? `Loading ${demoProgress?.loaded || 0} of ${demoProgress?.total || DEMO_INCIDENTS.length}`
+                  : loadedDemoIncidents.size >= DEMO_INCIDENTS.length
+                  ? `Demo Data Loaded (12/12)`
+                  : loadedDemoIncidents.size > 0
+                  ? `Load Demo Data (${loadedDemoIncidents.size}/12)`
+                  : 'Load Demo Data'}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setIsRetainFormOpen(!isRetainFormOpen)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-mono font-semibold text-white bg-purple-600 hover:bg-purple-700 dark:bg-purple-600 dark:hover:bg-purple-500 shadow-sm transition-all cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Retain to Hindsight</span>
+            </button>
+          </div>
         </div>
 
-        {/* Visual Memory Graph Flow: Current Incident → Hindsight Memory → Related Incidents → Root Causes → Successful Resolutions → New Recommendation */}
-        <div className="mt-14 p-6 sm:p-8 rounded-xl border border-purple-200 dark:border-purple-500/20 bg-purple-50/40 dark:bg-[#0A0D16]/90 shadow-xl dark:shadow-2xl backdrop-blur-md">
+        {/* Live Progress Banner for Demo Loading */}
+        <AnimatePresence>
+          {demoProgress && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="mt-4 p-4 rounded-xl border border-purple-300 dark:border-purple-500/40 bg-purple-50/90 dark:bg-purple-950/30 shadow-md backdrop-blur-xs flex flex-col gap-3 text-xs font-mono"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {isDemoLoading ? (
+                      <Loader2 className="w-4 h-4 text-purple-600 dark:text-purple-400 animate-spin shrink-0" />
+                    ) : demoProgress.failed > 0 ? (
+                      <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                    ) : demoProgress.isComplete ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    ) : (
+                      <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                    )}
+                    <span className="font-bold text-slate-900 dark:text-white">
+                      {demoProgress.isComplete 
+                        ? `Loaded ${demoProgress.loaded} of ${demoProgress.total}, failed ${demoProgress.failed}`
+                        : `Retaining Demo Incidents (${demoProgress.loaded} of ${demoProgress.total})`}
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-purple-200/80 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 text-[11px] font-bold">
+                      Loaded {demoProgress.loaded} of {demoProgress.total}
+                    </span>
+                    {demoProgress.failed > 0 && (
+                      <span className="px-2 py-0.5 rounded bg-rose-200/80 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 text-[11px] font-bold">
+                        Failed: {demoProgress.failed}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-700 dark:text-slate-300">
+                    {demoProgress.statusText}
+                  </div>
+                </div>
+
+                {/* Visual Progress Bar */}
+                <div className="w-full sm:w-56 shrink-0 space-y-1">
+                  <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                    <span>Progress</span>
+                    <span>{Math.round((demoProgress.loaded / demoProgress.total) * 100)}%</span>
+                  </div>
+                  <div className="h-2 w-full bg-slate-200 dark:bg-white/10 rounded-full overflow-hidden">
+                    <motion.div
+                      className={`h-full rounded-full ${demoProgress.failed > 0 ? 'bg-amber-500' : 'bg-purple-600 dark:bg-purple-500'}`}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${(demoProgress.loaded / demoProgress.total) * 100}%` }}
+                      transition={{ ease: 'easeOut', duration: 0.3 }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Exact Error Message Details if any incident failed */}
+              {demoProgress.errors && demoProgress.errors.length > 0 && (
+                <div className="mt-2 p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-[11px] space-y-1">
+                  <div className="font-semibold text-rose-800 dark:text-rose-300 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>Failed Incident Details:</span>
+                  </div>
+                  {demoProgress.errors.map((errItem, idx) => (
+                    <div key={idx} className="text-rose-700 dark:text-rose-300/90 pl-5">
+                      • Incident #{errItem.incidentNumber} [{errItem.service}]: <code className="bg-rose-100 dark:bg-rose-900/60 px-1 py-0.5 rounded">{errItem.error}</code>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Collapsible Retain Memory Drawer Form */}
+        <AnimatePresence>
+          {isRetainFormOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden mt-6"
+            >
+              <div className="p-6 rounded-xl border border-purple-300 dark:border-purple-500/40 bg-purple-50/70 dark:bg-purple-950/20 shadow-lg space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-purple-200 dark:border-purple-500/30">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      Retain Incident Resolution into Hindsight Bank "{stats.bankId || 'Incident'}"
+                    </h3>
+                  </div>
+                  <span className="text-xs font-mono text-purple-600 dark:text-purple-400">
+                    Operation: retain()
+                  </span>
+                </div>
+
+                <form onSubmit={handleRetainSubmit} className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="font-mono text-[11px] text-slate-700 dark:text-slate-300 font-semibold block mb-1">
+                        Incident Title / Root Cause:
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={retainTitle}
+                        onChange={(e) => setRetainTitle(e.target.value)}
+                        placeholder="e.g. Database connection pool exhaustion during peak checkout"
+                        className="w-full bg-white dark:bg-[#090C12] border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-mono text-[11px] text-slate-700 dark:text-slate-300 font-semibold block mb-1">
+                        Affected Service:
+                      </label>
+                      <select
+                        value={retainService}
+                        onChange={(e) => setRetainService(e.target.value)}
+                        className="w-full bg-white dark:bg-[#090C12] border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-purple-500"
+                      >
+                        <option value="Payments API">Payments API</option>
+                        <option value="Auth Service">Auth Service</option>
+                        <option value="Billing Engine">Billing Engine</option>
+                        <option value="API Gateway">API Gateway</option>
+                        <option value="Search Cluster">Search Cluster</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-mono text-[11px] text-slate-700 dark:text-slate-300 font-semibold block mb-1">
+                      Verified Resolution & Mitigation Action:
+                    </label>
+                    <textarea
+                      required
+                      rows={2}
+                      value={retainResolution}
+                      onChange={(e) => setRetainResolution(e.target.value)}
+                      placeholder="e.g. Increased PgBouncer default_pool_size from 100 to 250 and set idle_transaction_timeout to 5s."
+                      className="w-full bg-white dark:bg-[#090C12] border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-mono text-[11px] text-slate-700 dark:text-slate-300 font-semibold block mb-1">
+                      Learned Institutional Heuristic (What worked / what to avoid):
+                    </label>
+                    <input
+                      type="text"
+                      value={retainLesson}
+                      onChange={(e) => setRetainLesson(e.target.value)}
+                      placeholder="e.g. Do not restart pods during transaction bursts; tune proxy pool capacity instead."
+                      className="w-full bg-white dark:bg-[#090C12] border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="text-[11px] font-mono text-slate-500">
+                      Extracts entities, temporal scopes, and graph edges automatically.
+                    </span>
+
+                    <div className="flex items-center gap-3">
+                      {retainStatus === 'saving' && (
+                        <span className="text-xs font-mono text-purple-600 dark:text-purple-400 animate-pulse">
+                          Retaining to Hindsight...
+                        </span>
+                      )}
+                      {retainStatus === 'saved' && (
+                        <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" />
+                          <span>{retainMessage}</span>
+                        </span>
+                      )}
+                      {retainStatus === 'error' && (
+                        <span className="text-xs font-mono text-rose-600 dark:text-rose-400">
+                          {retainMessage}
+                        </span>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={retainStatus === 'saving'}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-mono font-semibold text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 cursor-pointer shadow-sm"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Commit Memory</span>
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Visual Memory Graph Flow: Current Incident → Hindsight Memory → Related Incidents → Root Causes → Successful Resolutions → Active Playbook */}
+        <div className="mt-8 p-6 sm:p-8 rounded-xl border border-purple-200 dark:border-purple-500/20 bg-purple-50/40 dark:bg-[#0A0D16]/90 shadow-xl dark:shadow-2xl backdrop-blur-md">
           <div className="text-xs font-mono uppercase tracking-wider text-purple-700 dark:text-purple-400 font-semibold mb-6 flex items-center justify-between">
             <span className="flex items-center gap-2">
               <BrainCircuit className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-              Autonomous Memory Traverse & Resolution Synthesis
+              Hindsight Cognitive Recall Pipeline
             </span>
-            <span className="hidden sm:inline text-slate-500">Continuous institutional recall</span>
+            <span className="text-slate-500 font-mono text-[11px]">
+              Bank ID: {stats.bankId || 'Incident'}
+            </span>
           </div>
 
-          {/* Desktop Flow Line with Connected Nodes */}
+          {/* Flow Line with Connected Nodes */}
           <div className="grid grid-cols-1 md:grid-cols-6 gap-2 relative">
             {flowNodes.map((node, index) => {
               const isHindsightCore = node.type === 'hindsight';
@@ -127,36 +577,71 @@ export const HindsightMemorySection: React.FC = () => {
           </div>
         </div>
 
-        {/* Live Interactive Memory Explorer */}
-        <div className="mt-12 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Real Hindsight Interactive Memory Explorer */}
+        <div className="mt-10 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left Column: Interactive Memory Cards (7 cols) */}
           <div className="lg:col-span-7 space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search Hindsight memory (e.g. 'connection pool', 'timeout', 'kafka')..."
-                  className="w-full bg-white dark:bg-[#0B0E17] border border-slate-200 dark:border-white/10 rounded-lg pl-9 pr-4 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-purple-500/50 shadow-xs transition-colors"
-                />
-              </div>
-              {searchQuery && (
+            {/* Search Input & Quick Query Pills */}
+            <div className="space-y-2">
+              <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search Hindsight with recall() (e.g. 'connection pool', 'timeout', 'jwt key')..."
+                    className="w-full bg-white dark:bg-[#0B0E17] border border-slate-200 dark:border-white/10 rounded-lg pl-9 pr-9 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-purple-500/50 shadow-xs transition-colors"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        fetchMemories('');
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
                 <button
-                  onClick={() => setSearchQuery('')}
-                  className="p-2 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded-lg cursor-pointer"
-                  title="Clear search"
+                  type="submit"
+                  disabled={isLoading}
+                  className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-mono font-medium shadow-xs cursor-pointer transition-colors"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
+                  {isLoading ? 'Recalling...' : 'Recall'}
                 </button>
-              )}
+              </form>
+
+              {/* Quick Query Pills */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[10px] font-mono text-slate-500 uppercase mr-1">Queries:</span>
+                {quickPills.map((pill) => (
+                  <button
+                    key={pill}
+                    onClick={() => {
+                      setSearchQuery(pill);
+                      fetchMemories(pill);
+                    }}
+                    className="px-2 py-0.5 text-[11px] font-mono rounded bg-slate-100 hover:bg-purple-100 dark:bg-white/[0.04] dark:hover:bg-purple-950/40 text-slate-700 dark:text-slate-300 hover:text-purple-800 dark:hover:text-purple-300 border border-slate-200 dark:border-white/5 transition-colors cursor-pointer"
+                  >
+                    {pill}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Memory Cards List */}
+            {/* Recalled Memory Cards List */}
             <div className="space-y-3">
               {memories.map((mem) => {
                 const isSelected = selectedMemory?.id === mem.id;
+                const scoreDisplay = mem.scores?.final 
+                  ? `${Math.round(mem.scores.final * 100)}% Match` 
+                  : `${Math.round(mem.confidenceScore * 100)}% Match`;
+
                 return (
                   <button
                     key={mem.id}
@@ -174,15 +659,15 @@ export const HindsightMemorySection: React.FC = () => {
                         </span>
                         <span className="text-slate-300 dark:text-white/20">·</span>
                         <span className="text-slate-600 dark:text-slate-400 font-medium">{mem.service}</span>
+                        {mem.factType && (
+                          <span className="text-[10px] font-mono uppercase px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-500/20">
+                            {mem.factType}
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-3 font-mono text-[11px]">
-                        <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-slate-400 dark:text-slate-500" />
-                          {mem.resolutionTimeMinutes}m resolution
-                        </span>
-                        <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
-                          <CheckCircle2 className="w-3 h-3" />
-                          {mem.outcome}
+                      <div className="flex items-center gap-2 font-mono text-[11px]">
+                        <span className="text-emerald-700 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-500/30">
+                          {scoreDisplay}
                         </span>
                       </div>
                     </div>
@@ -193,14 +678,25 @@ export const HindsightMemorySection: React.FC = () => {
 
                     <div className="space-y-1.5 text-xs">
                       <div>
-                        <strong className="text-slate-500 dark:text-slate-400">Root Cause: </strong>
-                        <span className="text-slate-700 dark:text-slate-300">{mem.rootCause}</span>
-                      </div>
-                      <div>
                         <strong className="text-slate-500 dark:text-slate-400">Resolution: </strong>
                         <span className="text-indigo-700 dark:text-indigo-300 font-mono font-medium">{mem.resolution}</span>
                       </div>
                     </div>
+
+                    {/* Entities tags extracted by Hindsight */}
+                    {mem.entities && mem.entities.length > 0 && (
+                      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] font-mono text-slate-400">Entities:</span>
+                        {mem.entities.map((ent, idx) => (
+                          <span
+                            key={idx}
+                            className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 dark:bg-white/[0.04] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-white/5"
+                          >
+                            {ent}
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
                     {/* Learned pattern badge */}
                     <div className="mt-3 pt-3 border-t border-slate-200 dark:border-white/[0.06] flex items-start gap-2 text-xs text-purple-900 dark:text-purple-200/90 bg-purple-50 dark:bg-purple-500/[0.04] p-2.5 rounded-lg border border-purple-200 dark:border-purple-500/10">
@@ -214,11 +710,11 @@ export const HindsightMemorySection: React.FC = () => {
                 );
               })}
 
-              {memories.length === 0 && (
+              {memories.length === 0 && !isLoading && (
                 <div className="p-8 text-center rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.06]">
                   <Database className="w-8 h-8 text-slate-400 dark:text-slate-500 mx-auto mb-2 opacity-50" />
                   <div className="text-sm font-medium text-slate-700 dark:text-slate-300">No memories matched query</div>
-                  <div className="text-xs text-slate-500 mt-1">Try querying "connection pool", "kafka", or "auth".</div>
+                  <div className="text-xs text-slate-500 mt-1">Try querying "connection pool", "database", or retain a new memory above.</div>
                 </div>
               )}
             </div>
@@ -231,17 +727,23 @@ export const HindsightMemorySection: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                   <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-900 dark:text-slate-200">
-                    Hindsight Institutional Synthesis
+                    Hindsight Memory Inspection
                   </span>
                 </div>
-                <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 font-semibold">94.2% Similarity</span>
+                {selectedMemory && (
+                  <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                    {selectedMemory.scores?.final 
+                      ? `${Math.round(selectedMemory.scores.final * 100)}% Match` 
+                      : `${Math.round(selectedMemory.confidenceScore * 100)}% Match`}
+                  </span>
+                )}
               </div>
 
               {selectedMemory ? (
                 <div className="space-y-4 text-xs">
                   <div>
                     <span className="text-[11px] font-mono text-slate-500 uppercase block mb-1">
-                      Active Correlated Incident
+                      Active Correlated Memory
                     </span>
                     <div className="text-sm font-semibold text-slate-900 dark:text-white">
                       Incident #{selectedMemory.incidentNumber} · {selectedMemory.service}
@@ -264,13 +766,22 @@ export const HindsightMemorySection: React.FC = () => {
                     </p>
                   </div>
 
-                  <div className="pt-2 text-[11px] text-slate-600 dark:text-slate-400 space-y-1">
+                  {/* Fact Metadata */}
+                  <div className="pt-2 text-[11px] text-slate-600 dark:text-slate-400 space-y-1.5">
                     <div className="flex justify-between">
-                      <span>Historical MTTR:</span>
-                      <strong className="text-slate-800 dark:text-slate-200 font-mono">{selectedMemory.resolutionTimeMinutes} minutes</strong>
+                      <span>Memory Bank:</span>
+                      <strong className="text-purple-700 dark:text-purple-300 font-mono">{stats.bankId || 'Incident'}</strong>
                     </div>
+                    {selectedMemory.rawFactId && (
+                      <div className="flex justify-between">
+                        <span>Fact ID:</span>
+                        <span className="text-slate-700 dark:text-slate-300 font-mono truncate max-w-[180px]">
+                          {selectedMemory.rawFactId}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between">
-                      <span>Tags Indexed:</span>
+                      <span>Indexed Tags:</span>
                       <span className="text-slate-700 dark:text-slate-300 font-mono">{selectedMemory.tags.join(', ')}</span>
                     </div>
                     <div className="flex justify-between">
@@ -281,7 +792,7 @@ export const HindsightMemorySection: React.FC = () => {
                 </div>
               ) : (
                 <div className="text-xs text-slate-500 text-center py-8">
-                  Select a memory on the left to inspect its detailed learning graph.
+                  Select a memory on the left to inspect its extracted entities and mitigation strategy.
                 </div>
               )}
             </div>

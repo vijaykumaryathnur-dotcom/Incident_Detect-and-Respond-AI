@@ -49,6 +49,15 @@ export interface HindsightMemory {
   learnedPattern: string;
   timestamp: string;
   tags: string[];
+  isRealHindsight?: boolean;
+  rawFactId?: string;
+  factType?: 'world' | 'observation' | 'experience' | string;
+  entities?: string[];
+  scores?: {
+    final?: number;
+    semantic?: number;
+    keyword?: number;
+  };
 }
 
 export interface RunbookStep {
@@ -107,5 +116,7 @@ export interface SystemIntelligenceStats {
   learnedPatterns: number;
   successfulResolutions: number;
   avgMttrMinutes: number;
-  status: 'Online' | 'Syncing' | 'Idle';
+  status: 'Online' | 'Syncing' | 'Idle' | 'Connecting' | 'Offline';
+  bankId?: string;
+  isRealHindsight?: boolean;
 }

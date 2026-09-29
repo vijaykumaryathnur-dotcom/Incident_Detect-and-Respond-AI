@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { INITIAL_INCIDENTS, INITIAL_RUNBOOKS, INITIAL_POSTMORTEM } from '../../data/mockData';
 import { hindsightService } from '../../services/hindsight';
+import { apiService } from '../../services/api';
 import { Incident, HindsightMemory, Postmortem } from '../../types';
 import { InteractiveTimeline, MilestoneId } from './InteractiveTimeline';
 
@@ -47,6 +48,8 @@ export const IncidentWorkspace: React.FC<IncidentWorkspaceProps> = ({
   const [currentTab, setCurrentTab] = useState<WorkspaceTab>('hindsight');
   const [memories, setMemories] = useState<HindsightMemory[]>([]);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [explanation, setExplanation] = useState<string>('');
+  const [currentBankId, setCurrentBankId] = useState<string>(hindsightService.getStats().bankId || 'memoryops-incidents');
   const [notes, setNotes] = useState<string[]>([
     '15:29 UTC: AI Investigator verified database connection saturation.',
     '15:30 UTC: SRE on-call approved DB-CONNECTION-POOL-RECOVERY runbook execution.'
@@ -56,25 +59,71 @@ export const IncidentWorkspace: React.FC<IncidentWorkspaceProps> = ({
   const [selectedMilestone, setSelectedMilestone] = useState<MilestoneId>('hindsight_recalled');
 
   useEffect(() => {
-    const fetchRelated = async () => {
-      const rel = await hindsightService.getRelatedIncidents(incident.id);
-      setMemories(rel);
-    };
-    fetchRelated();
-  }, [incident.id]);
+    const fetchIncidentAndRelated = async () => {
+      // 1. Fetch latest incident from backend if available
+      try {
+        const backendInc = await apiService.getIncident(incidentId);
+        if (backendInc) {
+          setIncident(backendInc);
+        }
+      } catch (err) {
+        console.warn('Incident fetch fallback:', err);
+      }
 
-  const handleAction = (action: 'Acknowledge' | 'Assign' | 'Resolve') => {
+      // 2. Perform AI investigation & real Hindsight recall via apiService
+      try {
+        const analysis = await apiService.analyzeIncident(incident);
+        if (analysis.matchedMemories && analysis.matchedMemories.length > 0) {
+          setMemories(analysis.matchedMemories);
+        } else {
+          const rel = await hindsightService.getRelatedIncidents(incident.id);
+          setMemories(rel);
+        }
+        if (analysis.explanation) {
+          setExplanation(analysis.explanation);
+        }
+      } catch (err) {
+        const rel = await hindsightService.getRelatedIncidents(incident.id);
+        setMemories(rel);
+      }
+
+      setCurrentBankId(hindsightService.getStats().bankId || 'memoryops-incidents');
+    };
+
+    fetchIncidentAndRelated();
+  }, [incidentId]);
+
+  const handleAction = async (action: 'Acknowledge' | 'Assign' | 'Resolve') => {
     if (action === 'Acknowledge') {
       setIncident((prev) => ({ ...prev, status: 'Investigating' }));
+      await apiService.updateIncidentStatus(incident.id, 'Investigating');
       setActionNotice('Incident acknowledged by On-Call SRE.');
+      setTimeout(() => setActionNotice(null), 3000);
     } else if (action === 'Assign') {
       setIncident((prev) => ({ ...prev, assignee: 'You (Active Responder)' }));
       setActionNotice('Assigned to current user.');
+      setTimeout(() => setActionNotice(null), 3000);
     } else if (action === 'Resolve') {
       setIncident((prev) => ({ ...prev, status: 'Resolved' }));
-      setActionNotice('Incident resolved. SLO baseline restored.');
+      await apiService.updateIncidentStatus(incident.id, 'Resolved');
+      setActionNotice(`Retaining incident resolution to Hindsight memory bank "${currentBankId}"...`);
+      
+      // Send the resolution to the backend to store in Hindsight using retain
+      try {
+        await apiService.retainIncident(incident, {
+          resolution: 'Applied DB-CONNECTION-POOL-RECOVERY: Scaled PgBouncer pool to 250 connections and patched idle connection reclaim timeout.',
+          rootCause: incident.likelyRootCause || 'Database connection pool saturation under peak checkout burst',
+          lessonsLearned: 'This service responds better to dynamic pool capacity scaling than service restart.'
+        });
+        await hindsightService.refreshStatusAndMemories();
+        setActionNotice(`Incident #${incident.incidentNumber} resolution saved to Hindsight memory bank "${currentBankId}" via retain!`);
+        setTimeout(() => setActionNotice(null), 4500);
+      } catch (err: any) {
+        console.warn('Retain error:', err);
+        setActionNotice(`Incident resolved. (Hindsight notice: ${err?.message || 'Logged locally'})`);
+        setTimeout(() => setActionNotice(null), 4500);
+      }
     }
-    setTimeout(() => setActionNotice(null), 3000);
   };
 
   const handleAddNote = (e: React.FormEvent) => {
@@ -85,10 +134,11 @@ export const IncidentWorkspace: React.FC<IncidentWorkspaceProps> = ({
   };
 
   const handleSavePostmortem = async () => {
+    setActionNotice('Saving postmortem to Hindsight bank "Incident" via retain...');
     await hindsightService.storePostmortem(INITIAL_POSTMORTEM);
     setPostmortemSaved(true);
-    setActionNotice('Postmortem lessons permanently committed to Hindsight.');
-    setTimeout(() => setActionNotice(null), 3500);
+    setActionNotice('Postmortem lessons permanently retained to Hindsight memory bank "Incident"!');
+    setTimeout(() => setActionNotice(null), 4000);
   };
 
   const tabs: { id: WorkspaceTab; label: string; highlight?: boolean }[] = [
@@ -239,21 +289,39 @@ export const IncidentWorkspace: React.FC<IncidentWorkspaceProps> = ({
                 <div className="flex items-center gap-2.5">
                   <Database className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                   <div>
-                    <span className="text-xs font-mono uppercase tracking-wider text-purple-700 dark:text-purple-400 font-bold block">
-                      HINDSIGHT MEMORY
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono uppercase tracking-wider text-purple-700 dark:text-purple-400 font-bold block">
+                        HINDSIGHT RECALL
+                      </span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-semibold">
+                        Bank: {currentBankId}
+                      </span>
+                    </div>
                     <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                      3 related historical incidents found
+                      {memories.length} related precedent{memories.length === 1 ? '' : 's'} recalled from Hindsight
                     </h3>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4 text-xs font-mono">
+                <div className="flex items-center gap-3 text-xs font-mono">
                   <span className="bg-purple-100 dark:bg-purple-500/20 text-purple-800 dark:text-purple-200 border border-purple-300 dark:border-purple-500/30 px-3 py-1 rounded font-bold">
-                    94% similarity
+                    {memories[0]?.confidenceScore ? `${Math.round(memories[0].confidenceScore * 100)}% similarity` : 'Vector affinity'}
                   </span>
                 </div>
               </div>
+
+              {/* AI Investigator Explanation of WHY historical incidents are relevant */}
+              {explanation && (
+                <div className="p-3.5 rounded-lg bg-indigo-50/80 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/30 text-xs font-sans space-y-1">
+                  <div className="flex items-center gap-2 font-mono text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>AI Investigator Telemetry Correlation:</span>
+                  </div>
+                  <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                    {explanation}
+                  </p>
+                </div>
+              )}
 
               {/* Memory stats */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
@@ -266,7 +334,7 @@ export const IncidentWorkspace: React.FC<IncidentWorkspaceProps> = ({
                     DB-CONNECTION-POOL-RECOVERY
                   </div>
                   <div className="text-[11px] text-purple-700 dark:text-purple-300 mt-1">
-                    Success rate: 98% across 3 historical instances
+                    Verified across {memories.length} historical instance{memories.length === 1 ? '' : 's'}
                   </div>
                 </div>
 

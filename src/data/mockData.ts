@@ -1,11 +1,13 @@
 import { HindsightMemory, Incident, Postmortem, Runbook, ServiceEntity, SystemIntelligenceStats } from '../types';
 
 export const INITIAL_STATS: SystemIntelligenceStats = {
-  totalMemories: 1284,
-  learnedPatterns: 342,
-  successfulResolutions: 891,
-  avgMttrMinutes: 8.2,
+  totalMemories: 3,
+  learnedPatterns: 3,
+  successfulResolutions: 3,
+  avgMttrMinutes: 7.2,
   status: 'Online',
+  bankId: 'Incident',
+  isRealHindsight: true
 };
 
 export const INITIAL_MEMORIES: HindsightMemory[] = [

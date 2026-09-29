@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { INITIAL_INCIDENTS, INITIAL_STATS } from '../../data/mockData';
 import { hindsightService } from '../../services/hindsight';
+import { apiService, API_BASE_URL } from '../../services/api';
 import { Incident, SystemIntelligenceStats } from '../../types';
 import { useToast } from '../../context/ToastContext';
 
@@ -41,7 +42,8 @@ interface ProductDashboardProps {
 
 export const ProductDashboard: React.FC<ProductDashboardProps> = ({ onSelectIncident }) => {
   const [incidents, setIncidents] = useState<Incident[]>(INITIAL_INCIDENTS);
-  const [stats, setStats] = useState<SystemIntelligenceStats>(INITIAL_STATS);
+  const [stats, setStats] = useState<SystemIntelligenceStats>(hindsightService.getStats());
+  const [isBackendConnected, setIsBackendConnected] = useState<boolean>(true);
   
   // Filtering states
   const [filterSeverity, setFilterSeverity] = useState<string>('all');
@@ -61,9 +63,37 @@ export const ProductDashboard: React.FC<ProductDashboardProps> = ({ onSelectInci
   const hasAutoTriggered = useRef(false);
 
   useEffect(() => {
-    setStats(hindsightService.getStats());
+    // 1. Fetch live system status & memory stats from backend
+    const loadBackendData = async () => {
+      try {
+        const health = await apiService.getSystemStatus();
+        setIsBackendConnected(health.online);
+        setStats({
+          totalMemories: health.totalMemories,
+          learnedPatterns: health.learnedPatterns,
+          successfulResolutions: health.successfulResolutions,
+          avgMttrMinutes: 7.2,
+          status: health.online ? 'Online' : 'Offline',
+          bankId: health.bankId,
+          isRealHindsight: true
+        });
+
+        // 2. Fetch incidents from backend
+        const backendIncidents = await apiService.getIncidents();
+        if (backendIncidents && backendIncidents.length > 0) {
+          setIncidents(backendIncidents);
+        }
+      } catch (err) {
+        setIsBackendConnected(false);
+        setStats(prev => ({ ...prev, status: 'Offline' }));
+      }
+    };
+
+    loadBackendData();
+
     const unsub = hindsightService.subscribe(() => {
       setStats(hindsightService.getStats());
+      setIsBackendConnected(hindsightService.getStats().status !== 'Offline');
     });
     return () => unsub();
   }, []);
@@ -119,6 +149,15 @@ export const ProductDashboard: React.FC<ProductDashboardProps> = ({ onSelectInci
     };
 
     setIncidents((prev) => [newInc, ...prev.filter((i) => i.id !== newInc.id)]);
+    
+    // As per user requirement: When a new incident comes in, search Hindsight using recall and update Memory page
+    hindsightService.retrieveIncidentContext(newInc).then((ctx) => {
+      if (ctx.matchedMemories.length > 0) {
+        newInc.hindsightSimilarityScore = ctx.confidence;
+        newInc.matchedMemories = ctx.matchedMemories.map(m => m.id);
+      }
+    }).catch(console.warn);
+
     triggerP1Alert({
       incidentId: newInc.id,
       incidentNumber: newInc.incidentNumber,
@@ -326,9 +365,11 @@ export const ProductDashboard: React.FC<ProductDashboardProps> = ({ onSelectInci
           {/* Compact AI Status Area */}
           <div className="flex items-center gap-4 bg-slate-100/90 dark:bg-[#090C12] border border-slate-200 dark:border-white/[0.08] px-4 py-2 rounded-lg text-xs font-mono shadow-xs">
             <div className="flex items-center gap-2 pr-3 border-r border-slate-300 dark:border-white/10">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className={`w-2 h-2 rounded-full ${stats.status === 'Offline' ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
               <span className="text-slate-900 dark:text-slate-300 font-semibold">AI INVESTIGATOR</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-medium">Online</span>
+              <span className={`font-medium ${stats.status === 'Offline' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                {stats.status === 'Offline' ? 'Offline' : 'Online'}
+              </span>
             </div>
             <div className="flex items-center gap-4 text-slate-500 dark:text-slate-400 text-[11px]">
               <div>
@@ -341,7 +382,7 @@ export const ProductDashboard: React.FC<ProductDashboardProps> = ({ onSelectInci
               </div>
               <div>
                 <span>Resolved: </span>
-                <strong className="text-emerald-600 dark:text-emerald-400 font-bold">{stats.successfulResolutions}</strong>
+                <strong className="text-emerald-600 dark:text-emerald-400 font-bold">{statusCounts['Resolved'] || stats.successfulResolutions}</strong>
               </div>
             </div>
           </div>
@@ -838,7 +879,7 @@ export const ProductDashboard: React.FC<ProductDashboardProps> = ({ onSelectInci
         <div className="flex items-center gap-3">
           <Database className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0" />
           <span className="text-slate-700 dark:text-slate-300">
-            <strong>Hindsight Continuous Learning:</strong> Every incident resolution is cross-referenced with your cluster's 1,284 historical outages. No manual runbook digging required.
+            <strong>Hindsight Continuous Learning:</strong> Every incident resolution is retained directly in Hindsight memory bank "{stats.bankId || 'Incident'}". Recalled in real-time on incoming alerts.
           </span>
         </div>
         <button

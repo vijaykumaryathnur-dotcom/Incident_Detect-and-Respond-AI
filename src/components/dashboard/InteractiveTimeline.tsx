@@ -166,7 +166,7 @@ export const InteractiveTimeline: React.FC<InteractiveTimelineProps> = ({
       associatedTab: 'hindsight',
       iconType: 'database',
       colorTheme: 'purple',
-      description: 'Hindsight continuous memory store queried telemetry embeddings across 1,284 historical outages. Recalled Incident #184 and #231 with 94% similarity. Retrieved vital institutional rule: "Do NOT restart Payments API pods—it drops active payment transactions. Apply connection pool expansion instead."',
+      description: 'Hindsight continuous memory store queried telemetry embeddings in memory bank "Incident". Recalled Incident #184 and #231 with verified semantic similarity. Retrieved vital institutional rule: "Do NOT restart Payments API pods—it drops active payment transactions. Apply connection pool expansion instead."',
       systemActor: 'Hindsight Persistent Vector Memory Store',
       metrics: [
         { label: 'Vector Similarity', value: '94% Semantic Match', isAnomaly: false },
